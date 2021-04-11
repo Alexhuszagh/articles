@@ -16,9 +16,11 @@
 #include <cstdint>
 #include <typeinfo>
 #include <memory>
+#include <tuple>
 
 #include "bench.hpp"
 #include "policies.hpp"
+#include "short_alloc.hpp"
 
 namespace {
 
@@ -154,19 +156,48 @@ static_assert(is_non_trivial_of_size<NonTrivialArrayMedium>(32), "Invalid type")
 
 // Define all benchmarks
 
+template <typename T, size_t, size_t>
+struct std_allocator_wrapper {
+    using allocator_type = std::allocator<T>;
+    allocator_type allocator;
+};
+
+template <typename T, size_t N, size_t Align>
+class linear_allocator_wrapper {
+public:
+    using allocator_type = short_alloc<T, N, Align>;
+
+private:
+    // Define our arena type so we know to use it.
+    typename short_alloc<T, N, Align>::arena_type arena_;
+
+public:
+    allocator_type allocator;
+
+    linear_allocator_wrapper():
+        arena_(),
+        allocator(arena_)
+    {}
+
+    linear_allocator_wrapper(const linear_allocator_wrapper&) = delete;
+    linear_allocator_wrapper& operator=(const linear_allocator_wrapper&) = delete;
+};
+
 template<typename T>
 struct bench_fill_back {
     static void run(){
         new_graph<T>("fill_back", "us");
 
-        auto sizes = { 100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000, 1000000 };
-        bench<std::vector<T>, microseconds, Empty, FillBack>("vector", sizes);
-        bench<std::list<T>,   microseconds, Empty, FillBack>("list",   sizes);
-        bench<std::deque<T>,  microseconds, Empty, FillBack>("deque",  sizes);
-        bench<std::vector<T>, microseconds, Empty, ReserveSize, FillBack>("vector_reserve", sizes);
-        bench<std::vector<T>, microseconds, Empty, FillBackInserter>("vector_inserter", sizes);
-        bench<std::list<T>,   microseconds, Empty, FillBackInserter>("list_inserter",   sizes);
-        bench<std::deque<T>,  microseconds, Empty, FillBackInserter>("deque_inserter",  sizes);
+        constexpr SizesType Sizes { 100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000, 1000000 };
+        Bencher<std::vector, T, std_allocator_wrapper,    microseconds, Empty, Sizes, FillBack>::bench("vector");
+        Bencher<std::list,   T, std_allocator_wrapper,    microseconds, Empty, Sizes, FillBack>::bench("list");
+        Bencher<std::deque,  T, std_allocator_wrapper,    microseconds, Empty, Sizes, FillBack>::bench("deque");
+        Bencher<std::vector, T, std_allocator_wrapper,    microseconds, Empty, Sizes, ReserveSize, FillBack>::bench("vector_reserve");
+        Bencher<std::list,   T, linear_allocator_wrapper, microseconds, Empty, Sizes, FillBack>::bench("list_linear");
+        Bencher<std::vector, T, std_allocator_wrapper,    microseconds, Empty, Sizes, FillBackInserter>::bench("vector_inserter");
+        Bencher<std::list,   T, std_allocator_wrapper,    microseconds, Empty, Sizes, FillBackInserter>::bench("list_inserter");
+        Bencher<std::deque,  T, std_allocator_wrapper,    microseconds, Empty, Sizes, FillBackInserter>::bench("deque_inserter");
+        Bencher<std::list,   T, linear_allocator_wrapper, microseconds, Empty, Sizes, FillBackInserter>::bench("list_inserter_linear");
     }
 };
 
@@ -175,10 +206,11 @@ struct bench_emplace_back {
     static void run(){
         new_graph<T>("emplace_back", "us");
 
-        auto sizes = { 100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000, 1000000 };
-        bench<std::vector<T>, microseconds, Empty, EmplaceBack>("vector", sizes);
-        bench<std::list<T>,   microseconds, Empty, EmplaceBack>("list",   sizes);
-        bench<std::deque<T>,  microseconds, Empty, EmplaceBack>("deque",  sizes);
+        constexpr SizesType Sizes { 100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000, 1000000 };
+        Bencher<std::vector, T, std_allocator_wrapper,    microseconds, Empty, Sizes, EmplaceBack>::bench("vector");
+        Bencher<std::list,   T, std_allocator_wrapper,    microseconds, Empty, Sizes, EmplaceBack>::bench("list");
+        Bencher<std::deque,  T, std_allocator_wrapper,    microseconds, Empty, Sizes, EmplaceBack>::bench("deque");
+        Bencher<std::list,   T, linear_allocator_wrapper, microseconds, Empty, Sizes, EmplaceBack>::bench("list_linear");
     }
 };
 
@@ -187,15 +219,16 @@ struct bench_fill_front {
     static void run(){
         new_graph<T>("fill_front", "us");
 
-        auto sizes = { 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000 };
+        constexpr SizesType Sizes { 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000 };
 
         // it is too slow with bigger data types
         if(is_small<T>()){
-            bench<std::vector<T>, microseconds, Empty, FillFront>("vector", sizes);
+            Bencher<std::vector, T, std_allocator_wrapper, microseconds, Empty, Sizes, FillFront>::bench("vector");
         }
 
-        bench<std::list<T>,   microseconds, Empty, FillFront>("list",   sizes);
-        bench<std::deque<T>,  microseconds, Empty, FillFront>("deque",  sizes);
+        Bencher<std::list,  T, std_allocator_wrapper,    microseconds, Empty, Sizes, FillFront>::bench("list");
+        Bencher<std::deque, T, std_allocator_wrapper,    microseconds, Empty, Sizes, FillFront>::bench("deque");
+        Bencher<std::list,  T, linear_allocator_wrapper, microseconds, Empty, Sizes, FillFront>::bench("list_linear");
     }
 };
 
@@ -204,15 +237,16 @@ struct bench_emplace_front {
     static void run(){
         new_graph<T>("emplace_front", "us");
 
-        auto sizes = { 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000 };
+        constexpr SizesType Sizes { 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000 };
 
         // it is too slow with bigger data types
         if(is_small<T>()){
-            bench<std::vector<T>, microseconds, Empty, EmplaceFront>("vector", sizes);
+            Bencher<std::vector, T, std_allocator_wrapper, microseconds, Empty, Sizes, EmplaceFront>::bench("vector");
         }
 
-        bench<std::list<T>,   microseconds, Empty, EmplaceFront>("list",   sizes);
-        bench<std::deque<T>,  microseconds, Empty, EmplaceFront>("deque",  sizes);
+        Bencher<std::list,  T, std_allocator_wrapper,    microseconds, Empty, Sizes, EmplaceFront>::bench("list");
+        Bencher<std::deque, T, std_allocator_wrapper,    microseconds, Empty, Sizes, EmplaceFront>::bench("deque");
+        Bencher<std::list,  T, linear_allocator_wrapper, microseconds, Empty, Sizes, EmplaceFront>::bench("list_linear");
     }
 };
 
@@ -221,10 +255,11 @@ struct bench_linear_search {
     static void run(){
         new_graph<T>("linear_search", "us");
 
-        auto sizes = {1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000};
-        bench<std::vector<T>, microseconds, FilledRandom, Find>("vector", sizes);
-        bench<std::list<T>,   microseconds, FilledRandom, Find>("list",   sizes);
-        bench<std::deque<T>,  microseconds, FilledRandom, Find>("deque",  sizes);
+        constexpr SizesType Sizes { 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000 };
+        Bencher<std::vector, T, std_allocator_wrapper,    microseconds, FilledRandom, Sizes, Find>::bench("vector");
+        Bencher<std::list,   T, std_allocator_wrapper,    microseconds, FilledRandom, Sizes, Find>::bench("list");
+        Bencher<std::deque,  T, std_allocator_wrapper,    microseconds, FilledRandom, Sizes, Find>::bench("deque");
+        Bencher<std::list,   T, linear_allocator_wrapper, microseconds, FilledRandom, Sizes, Find>::bench("list_linear");
     }
 };
 
@@ -233,10 +268,11 @@ struct bench_random_insert {
     static void run(){
         new_graph<T>("random_insert", "ms");
 
-        auto sizes = {10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000};
-        bench<std::vector<T>, milliseconds, FilledRandom, Insert>("vector", sizes);
-        bench<std::list<T>,   milliseconds, FilledRandom, Insert>("list",   sizes);
-        bench<std::deque<T>,  milliseconds, FilledRandom, Insert>("deque",  sizes);
+        constexpr SizesType Sizes { 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000 };
+        Bencher<std::vector, T, std_allocator_wrapper,    microseconds, FilledRandom, Sizes, Insert>::bench("vector");
+        Bencher<std::list,   T, std_allocator_wrapper,    microseconds, FilledRandom, Sizes, Insert>::bench("list");
+        Bencher<std::deque,  T, std_allocator_wrapper,    microseconds, FilledRandom, Sizes, Insert>::bench("deque");
+        Bencher<std::list,   T, linear_allocator_wrapper, microseconds, FilledRandom, Sizes, Insert>::bench("list_linear");
     }
 };
 
@@ -245,11 +281,11 @@ struct bench_random_remove {
     static void run(){
         new_graph<T>("random_remove", "ms");
 
-        auto sizes = {10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000};
-        bench<std::vector<T>, milliseconds, FilledRandom, Erase>("vector", sizes);
-        bench<std::list<T>,   milliseconds, FilledRandom, Erase>("list",   sizes);
-        bench<std::deque<T>,  milliseconds, FilledRandom, Erase>("deque",  sizes);
-        bench<std::vector<T>, milliseconds, FilledRandom, RemoveErase>("vector_rem", sizes);
+        constexpr SizesType Sizes { 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000 };
+        Bencher<std::vector, T, std_allocator_wrapper,    microseconds, FilledRandom, Sizes, Erase>::bench("vector");
+        Bencher<std::list,   T, std_allocator_wrapper,    microseconds, FilledRandom, Sizes, Erase>::bench("list");
+        Bencher<std::deque,  T, std_allocator_wrapper,    microseconds, FilledRandom, Sizes, Erase>::bench("deque");
+        Bencher<std::list,   T, linear_allocator_wrapper, microseconds, FilledRandom, Sizes, Erase>::bench("list_linear");
     }
 };
 
@@ -258,10 +294,21 @@ struct bench_sort {
     static void run(){
         new_graph<T>("sort", "ms");
 
-        auto sizes = {100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000, 1000000};
-        bench<std::vector<T>, milliseconds, FilledRandom, Sort>("vector", sizes);
-        bench<std::list<T>,   milliseconds, FilledRandom, Sort>("list",   sizes);
-        bench<std::deque<T>,  milliseconds, FilledRandom, Sort>("deque",  sizes);
+        constexpr SizesType Sizes { 100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000, 1000000 };
+        Bencher<std::vector, T, std_allocator_wrapper,    microseconds, FilledRandom, Sizes, Sort>::bench("vector");
+        Bencher<std::list,   T, std_allocator_wrapper,    microseconds, FilledRandom, Sizes, Sort>::bench("list");
+        Bencher<std::deque,  T, std_allocator_wrapper,    microseconds, FilledRandom, Sizes, Sort>::bench("deque");
+        // Currently: GCC 10.x has a sort algorithm that default constructs
+        // objects. In order to fix it, you can apply the following diff to
+        // `include/bits/list.tcc`.
+        // -list __carry;
+        // -list __tmp[64];
+        // +#define _GLIBCXX_REPEAT_8(_X) _X, _X, _X, _X, _X, _X, _X, _X
+        // +list __carry(get_allocator());
+        // +list __tmp[64] = {
+        // +  _GLIBCXX_REPEAT_8(_GLIBCXX_REPEAT_8(list(get_allocator())))
+        // +};
+        Bencher<std::list,   T, linear_allocator_wrapper, microseconds, FilledRandom, Sizes, Sort>::bench("list_linear");
     }
 };
 
@@ -270,10 +317,11 @@ struct bench_destruction {
     static void run(){
         new_graph<T>("destruction", "us");
 
-        auto sizes = {100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000, 1000000};
-        bench<std::vector<T>, microseconds, SmartFilled, SmartDelete>("vector", sizes);
-        bench<std::list<T>,   microseconds, SmartFilled, SmartDelete>("list",   sizes);
-        bench<std::deque<T>,  microseconds, SmartFilled, SmartDelete>("deque",  sizes);
+        constexpr SizesType Sizes { 100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000, 1000000 };
+        Bencher<std::vector, T, std_allocator_wrapper,    microseconds, SmartFilled, Sizes, SmartDelete>::bench("vector");
+        Bencher<std::list,   T, std_allocator_wrapper,    microseconds, SmartFilled, Sizes, SmartDelete>::bench("list");
+        Bencher<std::deque,  T, std_allocator_wrapper,    microseconds, SmartFilled, Sizes, SmartDelete>::bench("deque");
+        Bencher<std::list,   T, linear_allocator_wrapper, microseconds, SmartFilled, Sizes, SmartDelete>::bench("list_linear");
     }
 };
 
@@ -282,10 +330,11 @@ struct bench_number_crunching {
     static void run(){
         new_graph<T>("number_crunching", "ms");
 
-        auto sizes = {10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000};
-        bench<std::vector<T>, milliseconds, Empty, RandomSortedInsert>("vector", sizes);
-        bench<std::list<T>,   milliseconds, Empty, RandomSortedInsert>("list",   sizes);
-        bench<std::deque<T>,  milliseconds, Empty, RandomSortedInsert>("deque",  sizes);
+        constexpr SizesType Sizes { 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000, 90000, 100000 };
+        Bencher<std::vector, T, std_allocator_wrapper,    microseconds, Empty, Sizes, RandomSortedInsert>::bench("vector");
+        Bencher<std::list,   T, std_allocator_wrapper,    microseconds, Empty, Sizes, RandomSortedInsert>::bench("list");
+        Bencher<std::deque,  T, std_allocator_wrapper,    microseconds, Empty, Sizes, RandomSortedInsert>::bench("deque");
+        Bencher<std::list,   T, linear_allocator_wrapper, microseconds, Empty, Sizes, RandomSortedInsert>::bench("list_linear");
     }
 };
 
@@ -317,7 +366,8 @@ int main(){
         TrivialMonster,
         NonTrivialStringMovable,
         NonTrivialStringMovableNoExcept,
-        NonTrivialArray<32> >();
+        NonTrivialArray<32>
+    >();
 
     //Generate the graphs
     graphs::output(graphs::Output::GOOGLE);

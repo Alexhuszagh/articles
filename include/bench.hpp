@@ -6,6 +6,7 @@
 //=======================================================================
 
 #include <chrono>
+#include <tuple>
 
 #include "graphs.hpp"
 #include "demangle.hpp"
@@ -34,34 +35,76 @@ inline static void run(Container &container, std::size_t size){
     run<Rest...>(container, size);
 }
 
+// A struct of our sizes, so we can define them in a template.
+struct SizesType {
+    size_t i0;
+    size_t i1;
+    size_t i2;
+    size_t i3;
+    size_t i4;
+    size_t i5;
+    size_t i6;
+    size_t i7;
+    size_t i8;
+    size_t i9;
+};
+
 // benchmarking procedure
-
-template<typename Container,
+template<template <typename...> typename Container,
+         typename ValueType,
+         template <typename, size_t, size_t> typename AllocatorWrapper,
          typename DurationUnit,
-         template<class> class CreatePolicy,
-         template<class> class ...TestPolicy>
-void bench(const std::string& type, const std::initializer_list<int> &sizes){
-    // create an element to copy so the temporary creation
-    // and initialization will not be accounted in a benchmark
-    for(auto size : sizes) {
-        std::size_t duration = 0;
+         template <typename> typename CreatePolicy,
+         SizesType Sizes,
+         template <typename> typename ...TestPolicy
+        >
+struct Bencher {
+    template <size_t N>
+    struct functor {
+        void operator()(const std::string& type) {
+            // Assume we're doing a doubly-linked list.
+            // This isn't guaranteed to be the correct size,
+            // but it works for Clang and GCC.
+            constexpr size_t NodeSize = sizeof(ValueType) + 2 * sizeof(uintptr_t);
+            // We can insert up to 1000 elements.
+            constexpr size_t BufferSize = sizeof(NodeSize) * (N + 1000);
+            constexpr size_t Align = alignof(NodeSize);
+            using WrapperType = AllocatorWrapper<ValueType, BufferSize, Align>;
+            using ContainerType = Container<ValueType, typename WrapperType::allocator_type>;
 
-        for(std::size_t i=0; i<REPEAT; ++i) {
-            auto container = CreatePolicy<Container>::make(size);
+            std::size_t duration = 0;
 
-            Clock::time_point t0 = Clock::now();
+            for(std::size_t i=0; i < REPEAT; ++i) {
+                auto wrapper = WrapperType();
+                auto container = CreatePolicy<ContainerType>::make(N, wrapper.allocator);
 
-            run<TestPolicy...>(container, size);
+                Clock::time_point t0 = Clock::now();
 
-            Clock::time_point t1 = Clock::now();
-            duration += std::chrono::duration_cast<DurationUnit>(t1 - t0).count();
+                run<TestPolicy...>(container, N);
+
+                Clock::time_point t1 = Clock::now();
+                duration += std::chrono::duration_cast<DurationUnit>(t1 - t0).count();
+            }
+
+            graphs::new_result(type, std::to_string(N), duration / REPEAT);
+            CreatePolicy<ContainerType>::clean();
         }
+    };
 
-        graphs::new_result(type, std::to_string(size), duration / REPEAT);
+    static void bench(const std::string& type) {
+        functor<Sizes.i0>()(type);
+        functor<Sizes.i1>()(type);
+        functor<Sizes.i2>()(type);
+        functor<Sizes.i3>()(type);
+        functor<Sizes.i4>()(type);
+        functor<Sizes.i5>()(type);
+        functor<Sizes.i6>()(type);
+        functor<Sizes.i7>()(type);
+        functor<Sizes.i8>()(type);
+        functor<Sizes.i9>()(type);
     }
 
-    CreatePolicy<Container>::clean();
-}
+};
 
 template<template<class> class Benchmark>
 void bench_types(){

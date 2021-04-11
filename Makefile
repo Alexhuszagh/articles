@@ -8,9 +8,9 @@ include make-utils/cpp-utils.mk
 SQRT_VALUE=5000000
 
 WARNING_FLAGS += -Wno-missing-field-initializers
-CXX_FLAGS += -DSQRT_VALUE=$(SQRT_VALUE) -ICatch/include
+CXX_FLAGS += -DSQRT_VALUE=$(SQRT_VALUE) -ICatch/include -Iplf_colony
 
-$(eval $(call use_cpp11))
+$(eval $(call use_cpp20))
 
 ifneq (,$(CLANG_USE_LIBCXX))
 $(eval $(call use_libcxx))

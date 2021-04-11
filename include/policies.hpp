@@ -6,6 +6,7 @@
 //=======================================================================
 
 #include <boost/intrusive/list.hpp>
+#include "plf_colony.h"
 
 // create policies
 
@@ -13,8 +14,8 @@
 
 template<class Container>
 struct Empty {
-    inline static Container make(std::size_t) {
-        return Container();
+    inline static Container make(std::size_t, typename Container::allocator_type const& allocator) {
+        return Container(allocator);
     }
     inline static void clean(){}
 };
@@ -24,7 +25,7 @@ struct Empty {
 template<class Container>
 struct EmptyPrepareBackup {
     static std::vector<typename Container::value_type> v;
-    inline static Container make(std::size_t size) {
+    inline static Container make(std::size_t size, typename Container::allocator_type const& allocator) {
         if(v.size() != size){
             v.clear();
             v.reserve(size);
@@ -33,7 +34,7 @@ struct EmptyPrepareBackup {
             }
         }
 
-        return Container();
+        return Container(allocator);
     }
 
     inline static void clean(){
@@ -47,8 +48,8 @@ std::vector<typename Container::value_type> EmptyPrepareBackup<Container>::v;
 
 template<class Container>
 struct Filled {
-    inline static Container make(std::size_t size) {
-        return Container(size);
+    inline static Container make(std::size_t size, typename Container::allocator_type const& allocator) {
+        return Container(size, allocator);
     }
     inline static void clean(){}
 };
@@ -56,7 +57,7 @@ struct Filled {
 template<class Container>
 struct FilledRandom {
     static std::vector<typename Container::value_type> v;
-    inline static Container make(std::size_t size){
+    inline static Container make(std::size_t size, typename Container::allocator_type const& allocator){
         // prepare randomized data that will have all the integers from the range
         if(v.size() != size){
             v.clear();
@@ -68,7 +69,7 @@ struct FilledRandom {
         }
 
         // fill with randomized data
-        Container container;
+        Container container(allocator);
         for(std::size_t i = 0; i < size; ++i){
             container.push_back(v[i]);
         }
@@ -88,7 +89,7 @@ std::vector<typename Container::value_type> FilledRandom<Container>::v;
 template<class Container>
 struct FilledRandomInsert {
     static std::vector<typename Container::value_type> v;
-    inline static Container make(std::size_t size){
+    inline static Container make(std::size_t size, typename Container::allocator_type const& allocator){
         // prepare randomized data that will have all the integers from the range
         if(v.size() != size){
             v.clear();
@@ -100,7 +101,7 @@ struct FilledRandomInsert {
         }
 
         // fill with randomized data
-        Container container;
+        Container container(allocator);
         for(std::size_t i = 0; i < size; ++i){
             container.insert(v[i]);
         }
@@ -119,8 +120,8 @@ std::vector<typename Container::value_type> FilledRandomInsert<Container>::v;
 
 template<class Container>
 struct SmartFilled {
-    inline static std::unique_ptr<Container> make(std::size_t size){
-        return std::unique_ptr<Container>(new Container(size, typename Container::value_type()));
+    inline static std::unique_ptr<Container> make(std::size_t size, typename Container::allocator_type const& allocator){
+        return std::unique_ptr<Container>(new Container(size, typename Container::value_type(), allocator));
     }
 
     inline static void clean(){}
@@ -129,7 +130,7 @@ struct SmartFilled {
 template<class Container>
 struct BackupSmartFilled {
     static std::vector<typename Container::value_type> v;
-    inline static std::unique_ptr<Container> make(std::size_t size){
+    inline static std::unique_ptr<Container> make(std::size_t size, typename Container::allocator_type const& allocator){
         if(v.size() != size){
             v.clear();
             v.reserve(size);
@@ -138,7 +139,7 @@ struct BackupSmartFilled {
             }
         }
 
-        std::unique_ptr<Container> container(new Container());
+        std::unique_ptr<Container> container(new Container(allocator));
 
         for(std::size_t i = 0; i < size; ++i){
             container->push_back(v[i]);
@@ -357,9 +358,9 @@ struct Sort {
     }
 };
 
-template<class T>
-struct Sort<std::list<T> > {
-    inline static void run(std::list<T> &c, std::size_t){
+template <class T, typename Allocator>
+struct Sort<std::list<T, Allocator> > {
+    inline static void run(std::list<T, Allocator> &c, std::size_t){
         c.sort();
     }
 };
