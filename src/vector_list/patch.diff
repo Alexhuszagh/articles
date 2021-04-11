@@ -1,0 +1,8 @@
+diff --git a/include/bits/list.tcc b/include/bits/list.tcc
+-list __carry;
+-list __tmp[64];
++#define _GLIBCXX_REPEAT_8(_X) _X, _X, _X, _X, _X, _X, _X, _X
++list __carry(get_allocator());
++list __tmp[64] = {
++  _GLIBCXX_REPEAT_8(_GLIBCXX_REPEAT_8(list(get_allocator())))
++};
